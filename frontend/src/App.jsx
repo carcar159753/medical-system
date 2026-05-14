@@ -140,8 +140,8 @@ export default function App() {
 
   const [medicos, setMedicos] = useState([
     {
-      crm: "123456",
-      senha: "admin",
+      crm: "admin",
+      senha: "159753",
       nome: "Administrador",
       cargo: "Diretor Médico",
       admin: true
@@ -155,6 +155,8 @@ export default function App() {
     cargo: "Médico",
     admin: false
   });
+
+  const [editandoMedico, setEditandoMedico] = useState(null);
 
   const [pacientes, setPacientes] = useState([]);
   const [pacienteAtual, setPacienteAtual] = useState(pacienteVazio);
@@ -213,14 +215,16 @@ export default function App() {
       body: JSON.stringify(dados)
     });
 
+    const respostaTexto = await resposta.text();
+
     if (!resposta.ok) {
-      throw new Error(`Erro ao atualizar ${colecao}`);
+      throw new Error(respostaTexto || `Erro ao atualizar ${colecao}`);
     }
 
-    return resposta.json();
+    return respostaTexto ? JSON.parse(respostaTexto) : {};
   };
 
-  const apiDelete = async (colecao, id) => {
+const apiDelete = async (colecao, id) => {
     const resposta = await fetch(`${API_URL}/api/${colecao}/${id}`, {
       method: "DELETE"
     });
@@ -252,19 +256,48 @@ export default function App() {
 
       setPacientes(pacientesDB || []);
       setHistorico(historicoDB || []);
-      setMedicos(
+      const medicosNormalizados =
         medicosDB && medicosDB.length > 0
-          ? medicosDB
+          ? medicosDB.map((m) =>
+              m.admin === true && String(m.crm || "").trim() === "123456"
+                ? {
+                    ...m,
+                    id: "admin",
+                    crm: "admin",
+                    senha: "159753"
+                  }
+                : m
+            )
           : [
               {
-                crm: "123456",
-                senha: "admin",
+                id: "admin",
+                crm: "admin",
+                senha: "159753",
                 nome: "Administrador",
                 cargo: "Diretor Médico",
                 admin: true
               }
-            ]
+            ];
+
+      const temAdminNovo = medicosNormalizados.some(
+        (m) => String(m.crm || "").trim() === "admin"
       );
+
+      const listaFinalMedicos = temAdminNovo
+        ? medicosNormalizados
+        : [
+            {
+              id: "admin",
+              crm: "admin",
+              senha: "159753",
+              nome: "Administrador",
+              cargo: "Diretor Médico",
+              admin: true
+            },
+            ...medicosNormalizados
+          ];
+
+      setMedicos(listaFinalMedicos);
       setVigilancias(vigilanciasDB || []);
       setPediatrias(pediatriasDB || []);
       setObstetricias(obstetriciasDB || []);
@@ -278,19 +311,37 @@ export default function App() {
     carregarTudo();
   }, []);
 
-  const login = () => {
-    const medico = medicos.find(
-      (m) => m.crm === crm && m.senha === senha
-    );
+const login = () => {
+  const crmDigitado = String(crm || "").trim();
+  const senhaDigitada = String(senha || "").trim();
 
-    if (!medico) {
-      return alert("CRM ou senha inválidos");
-    }
+  if (crmDigitado === "admin" && senhaDigitada === "159753") {
+    setUsuarioAtual({
+      id: "admin",
+      crm: "admin",
+      senha: "159753",
+      nome: "Administrador",
+      cargo: "Diretor Médico",
+      admin: true
+    });
 
-    setUsuarioAtual(medico);
-  };
+    return;
+  }
 
-  const salvarAssinatura = () => {
+  const medico = medicos.find(
+    (m) =>
+      String(m.crm || "").trim() === crmDigitado &&
+      String(m.senha || "").trim() === senhaDigitada
+  );
+
+  if (!medico) {
+    return alert("CRM ou senha inválidos");
+  }
+
+  setUsuarioAtual(medico);
+};
+
+const salvarAssinatura = () => {
     if (!assinaturaRef.current || assinaturaRef.current.isEmpty()) {
       return alert("Desenhe a assinatura primeiro");
     }
@@ -357,16 +408,45 @@ const apagarPaciente = (id) => {
     }
   };
 
-const criarMedico = () => {
-    if (!novoMedico.nome || !novoMedico.crm || !novoMedico.senha) {
-      return alert("Preencha todos os campos");
+const criarMedico = async () => {
+  if (!novoMedico.nome || !novoMedico.crm || !novoMedico.senha) {
+    return alert("Preencha todos os campos");
+  }
+
+  const medicoSalvar = {
+    id: String(novoMedico.crm).trim(),
+    nome: String(novoMedico.nome).trim(),
+    crm: String(novoMedico.crm).trim(),
+    senha: String(novoMedico.senha).trim(),
+    cargo: novoMedico.cargo || "Médico",
+    admin: novoMedico.admin === true
+  };
+
+  try {
+    let novaLista;
+
+    if (editandoMedico !== null) {
+      novaLista = medicos.map((m) =>
+        String(m.crm || "").trim() === String(editandoMedico || "").trim()
+          ? medicoSalvar
+          : m
+      );
+    } else {
+      if (
+        medicos.some(
+          (m) => String(m.crm || "").trim() === medicoSalvar.crm
+        )
+      ) {
+        return alert("Já existe médico com esse CRM");
+      }
+
+      novaLista = [...medicos, medicoSalvar];
     }
 
-    if (medicos.some((m) => m.crm === novoMedico.crm)) {
-      return alert("Já existe médico com esse CRM");
-    }
+    await apiPut("medicos", novaLista);
 
-    setMedicos([...medicos, novoMedico]);
+    setMedicos(novaLista);
+    setEditandoMedico(null);
 
     setNovoMedico({
       nome: "",
@@ -376,11 +456,19 @@ const criarMedico = () => {
       admin: false
     });
 
-    alert("Médico criado");
-  };
+    alert(editandoMedico !== null ? "Médico atualizado" : "Médico criado");
+  } catch (erro) {
+    console.error("Erro completo ao salvar médico:", erro);
 
-  const apagarMedico = async (crmMedico) => {
-    if (crmMedico === "123456") {
+    alert(
+      "Erro ao salvar médico: " +
+        (erro.message || "verifique o console")
+    );
+  }
+};
+
+const apagarMedico = async (crmMedico) => {
+    if (crmMedico === "admin") {
       return alert("O administrador padrão não pode ser apagado");
     }
 
@@ -2122,7 +2210,11 @@ if (!usuarioAtual) {
                 <option value="sim">Administrador</option>
               </select>
 
-              <button onClick={criarMedico}>Criar Médico</button>
+              <button onClick={criarMedico}>
+                {editandoMedico !== null
+                  ? "Salvar Alterações"
+                  : "Criar Médico"}
+              </button>
             </div>
 
             <div className="patients-list">
@@ -2133,13 +2225,22 @@ if (!usuarioAtual) {
                   <p>Cargo: {m.cargo || "Médico"}</p>
                   <p>Tipo: {m.admin ? "Administrador" : "Médico comum"}</p>
 
-                  {m.crm !== "123456" && (
-                    <button
-                      className="delete-btn"
-                      onClick={() => apagarMedico(m.crm)}
-                    >
-                      Apagar Médico
-                    </button>
+                  {m.crm !== "admin" && (
+                    <>
+                      <button
+                        className="exam-btn"
+                        onClick={() => editarMedico(m)}
+                      >
+                        Editar Médico
+                      </button>
+
+                      <button
+                        className="delete-btn"
+                        onClick={() => apagarMedico(m.crm)}
+                      >
+                        Apagar Médico
+                      </button>
+                    </>
                   )}
                 </div>
               ))}
