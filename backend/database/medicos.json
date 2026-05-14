@@ -1,0 +1,9 @@
+[
+  {
+    "crm": "123456",
+    "senha": "admin",
+    "nome": "Administrador",
+    "cargo": "Diretor Médico",
+    "admin": true
+  }
+]
