@@ -126,6 +126,25 @@ const obstetriciaVazia = {
   observacoes: ""
 };
 
+const psicologiaVazia = {
+  paciente: "",
+  idade: "",
+  telefone: "",
+  responsavel: "",
+  motivoConsulta: "",
+  humorAtual: "",
+  ansiedade: "",
+  sono: "",
+  alimentacao: "",
+  riscoAutoLesao: "",
+  historicoTratamento: "",
+  usoMedicacao: "",
+  diagnosticoInicial: "",
+  conduta: "",
+  retorno: "",
+  observacoes: ""
+};
+
 export default function App() {
   const assinaturaRef = useRef(null);
 
@@ -179,6 +198,10 @@ export default function App() {
   const [obstetricias, setObstetricias] = useState([]);
   const [obstetriciaAtual, setObstetriciaAtual] =
     useState(obstetriciaVazia);
+
+  const [psicologias, setPsicologias] = useState([]);
+  const [psicologiaAtual, setPsicologiaAtual] =
+    useState(psicologiaVazia);
 
   const apiGet = async (colecao) => {
     const resposta = await fetch(`${API_URL}/api/${colecao}`);
@@ -244,14 +267,16 @@ const apiDelete = async (colecao, id) => {
         medicosDB,
         vigilanciasDB,
         pediatriasDB,
-        obstetriciasDB
+        obstetriciasDB,
+        psicologiasDB
       ] = await Promise.all([
         apiGet("pacientes"),
         apiGet("historico"),
         apiGet("medicos"),
         apiGet("vigilancias"),
         apiGet("pediatrias"),
-        apiGet("obstetricias")
+        apiGet("obstetricias"),
+        apiGet("psicologias")
       ]);
 
       setPacientes(pacientesDB || []);
@@ -301,6 +326,7 @@ const apiDelete = async (colecao, id) => {
       setVigilancias(vigilanciasDB || []);
       setPediatrias(pediatriasDB || []);
       setObstetricias(obstetriciasDB || []);
+      setPsicologias(psicologiasDB || []);
     } catch (erro) {
       console.error(erro);
       alert("Erro ao conectar com o backend/Supabase. Verifique se o backend está ligado.");
@@ -1158,6 +1184,7 @@ if (!usuarioAtual) {
         </button>
         <button onClick={() => setPagina("pediatria")}>Pediatria</button>
         <button onClick={() => setPagina("obstetricia")}>Obstetrícia</button>
+        <button onClick={() => setPagina("psicologia")}>Psicologia</button>
         <button onClick={() => setPagina("uploads")}>Uploads</button>
         <button onClick={() => setPagina("graficos")}>Gráficos</button>
 
@@ -1215,6 +1242,11 @@ if (!usuarioAtual) {
               <div className="card">
                 <h3>Obstetrícia</h3>
                 <span>{obstetricias.length}</span>
+              </div>
+
+              <div className="card">
+                <h3>Psicologia</h3>
+                <span>{psicologias.length}</span>
               </div>
             </div>
           </div>
@@ -2140,6 +2172,34 @@ if (!usuarioAtual) {
           />
         )}
 
+        {pagina === "psicologia" && (
+          <AreaEspecial
+            titulo="Psicologia"
+            dados={psicologiaAtual}
+            setDados={setPsicologiaAtual}
+            lista={psicologias}
+            salvar={salvarPsicologia}
+            campos={[
+              ["paciente", "Nome do paciente"],
+              ["idade", "Idade"],
+              ["telefone", "Telefone"],
+              ["responsavel", "Responsável"],
+              ["motivoConsulta", "Motivo da consulta"],
+              ["humorAtual", "Humor atual"],
+              ["ansiedade", "Ansiedade"],
+              ["sono", "Sono"],
+              ["alimentacao", "Alimentação"],
+              ["riscoAutoLesao", "Risco de autoagressão"],
+              ["historicoTratamento", "Histórico de tratamento"],
+              ["usoMedicacao", "Uso de medicação"],
+              ["diagnosticoInicial", "Diagnóstico inicial"],
+              ["conduta", "Conduta psicológica"],
+              ["retorno", "Data de retorno"],
+              ["observacoes", "Observações"]
+            ]}
+          />
+        )}
+
         {pagina === "uploads" && <UploadArquivos usuarioAtual={usuarioAtual} />}
 
         {pagina === "graficos" && <DashboardGraficos />}
@@ -2274,12 +2334,22 @@ function AreaEspecial({
     "manipulacao",
     "situacao",
     "sintomas",
-    "conduta"
+    "conduta",
+    "motivoConsulta",
+    "humorAtual",
+    "ansiedade",
+    "sono",
+    "alimentacao",
+    "riscoAutoLesao",
+    "historicoTratamento",
+    "usoMedicacao",
+    "diagnosticoInicial"
   ];
 
   const camposData = [
     "validadeAlvara",
-    "dataAbertura"
+    "dataAbertura",
+    "retorno"
   ];
 
   return (

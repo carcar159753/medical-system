@@ -7,6 +7,7 @@ const { Pool } = require("pg");
 require("dotenv").config();
 
 const app = express();
+
 const PORT = process.env.PORT || 5000;
 
 app.use(cors({
@@ -14,15 +15,32 @@ app.use(cors({
   methods: ["GET", "POST", "PUT", "DELETE"],
   allowedHeaders: ["Content-Type", "Authorization"]
 }));
-app.use(express.json({ limit: "50mb" }));
-app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+
+app.use(express.json());
+
+app.use(
+  "/uploads",
+  express.static(path.join(__dirname, "uploads"))
+);
+
+const DATABASE_URL = process.env.DATABASE_URL;
 
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
+  connectionString: DATABASE_URL,
   ssl: {
     rejectUnauthorized: false
   }
 });
+
+const tabelas = [
+  "pacientes",
+  "historico",
+  "medicos",
+  "vigilancias",
+  "pediatrias",
+  "obstetricias",
+  "psicologias"
+];
 
 async function criarTabelas() {
   await pool.query(`
@@ -33,12 +51,6 @@ async function criarTabelas() {
     );
 
     CREATE TABLE IF NOT EXISTS historico (
-      id TEXT PRIMARY KEY,
-      dados JSONB NOT NULL,
-      criado_em TIMESTAMP DEFAULT NOW()
-    );
-
-    CREATE TABLE IF NOT EXISTS arquivos (
       id TEXT PRIMARY KEY,
       dados JSONB NOT NULL,
       criado_em TIMESTAMP DEFAULT NOW()
@@ -67,37 +79,16 @@ async function criarTabelas() {
       dados JSONB NOT NULL,
       criado_em TIMESTAMP DEFAULT NOW()
     );
-  `);
 
-  const medicos = await pool.query("SELECT * FROM medicos");
-
-  if (medicos.rows.length === 0) {
-    const admin = {
-      id: "123456",
-      crm: "123456",
-      senha: "admin",
-      nome: "Administrador",
-      cargo: "Diretor Médico",
-      admin: true
-    };
-
-    await pool.query(
-      "INSERT INTO medicos (id, dados) VALUES ($1, $2)",
-      [admin.id, admin]
+    CREATE TABLE IF NOT EXISTS psicologias (
+      id TEXT PRIMARY KEY,
+      dados JSONB NOT NULL,
+      criado_em TIMESTAMP DEFAULT NOW()
     );
-  }
+  `);
 
   console.log("Tabelas Supabase verificadas/criadas");
 }
-
-pool.connect()
-  .then(() => {
-    console.log("Supabase conectado");
-    criarTabelas();
-  })
-  .catch((err) => {
-    console.log("Erro ao conectar no Supabase:", err.message);
-  });
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -113,29 +104,15 @@ const storage = multer.diskStorage({
   filename: (req, file, cb) => {
     const ext = path.extname(file.originalname);
 
-    const baseName = file.originalname
+    const nome = file.originalname
       .replace(ext, "")
       .replace(/[^\w\d-]/g, "_");
 
-    cb(null, `${Date.now()}-${baseName}${ext}`);
+    cb(null, `${Date.now()}-${nome}${ext}`);
   }
 });
 
 const upload = multer({ storage });
-
-const colecoes = [
-  "pacientes",
-  "historico",
-  "arquivos",
-  "medicos",
-  "vigilancias",
-  "pediatrias",
-  "obstetricias"
-];
-
-function validarColecao(colecao) {
-  return colecoes.includes(colecao);
-}
 
 app.get("/", (req, res) => {
   res.json({
@@ -144,240 +121,204 @@ app.get("/", (req, res) => {
   });
 });
 
-/* LISTAR COLEÇÃO */
+app.post(
+  "/api/upload",
+  upload.single("arquivo"),
+  async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({
+          erro: "Nenhum arquivo enviado"
+        });
+      }
 
-app.get("/api/:colecao", async (req, res) => {
-  try {
-    const { colecao } = req.params;
-
-    if (!validarColecao(colecao)) {
-      return res.status(404).json({
-        erro: "Coleção não existe"
-      });
-    }
-
-    const resultado = await pool.query(
-      `SELECT dados FROM ${colecao} ORDER BY criado_em DESC`
-    );
-
-    res.json(resultado.rows.map((r) => r.dados));
-  } catch (erro) {
-    res.status(500).json({
-      erro: "Erro ao buscar dados",
-      detalhe: erro.message
-    });
-  }
-});
-
-/* ADICIONAR ITEM */
-
-app.post("/api/:colecao", async (req, res) => {
-  try {
-    const { colecao } = req.params;
-
-    if (!validarColecao(colecao)) {
-      return res.status(404).json({
-        erro: "Coleção não existe"
-      });
-    }
-
-    const novo = {
-      id: req.body.id || Date.now().toString(),
-      ...req.body
-    };
-
-    await pool.query(
-      `INSERT INTO ${colecao} (id, dados)
-       VALUES ($1, $2)
-       ON CONFLICT (id)
-       DO UPDATE SET dados = EXCLUDED.dados`,
-      [novo.id, novo]
-    );
-
-    res.json(novo);
-  } catch (erro) {
-    res.status(500).json({
-      erro: "Erro ao salvar dados",
-      detalhe: erro.message
-    });
-  }
-});
-
-/* SUBSTITUIR COLEÇÃO INTEIRA */
-
-app.put("/api/:colecao", async (req, res) => {
-  try {
-    const { colecao } = req.params;
-
-    if (!validarColecao(colecao)) {
-      return res.status(404).json({
-        erro: "Coleção não existe"
-      });
-    }
-
-    const lista = Array.isArray(req.body) ? req.body : [];
-
-    await pool.query(`DELETE FROM ${colecao}`);
-
-    for (const item of lista) {
-      const id = item.id || Date.now().toString();
+      const novo = {
+        id: Date.now().toString(),
+        pacienteId: req.body.pacienteId || "",
+        pacienteNome: req.body.pacienteNome || "",
+        tipo: req.body.tipo || "Arquivo",
+        descricao: req.body.descricao || "",
+        medico: req.body.medico || "",
+        nomeOriginal: req.file.originalname,
+        nomeArquivo: req.file.filename,
+        caminho: `/uploads/${req.file.filename}`,
+        mimetype: req.file.mimetype,
+        tamanho: req.file.size,
+        data: new Date().toLocaleString("pt-BR")
+      };
 
       await pool.query(
-        `INSERT INTO ${colecao} (id, dados)
-         VALUES ($1, $2)
-         ON CONFLICT (id)
-         DO UPDATE SET dados = EXCLUDED.dados`,
-        [id, { ...item, id }]
+        `
+        INSERT INTO historico (id, dados)
+        VALUES ($1, $2)
+      `,
+        [novo.id, novo]
       );
-    }
 
-    res.json({
-      ok: true,
-      colecao,
-      total: lista.length
-    });
-  } catch (erro) {
-    res.status(500).json({
-      erro: "Erro ao atualizar coleção",
-      detalhe: erro.message
-    });
-  }
-});
+      res.json(novo);
+    } catch (erro) {
+      console.error(erro);
 
-/* DELETAR ITEM */
-
-app.delete("/api/:colecao/:id", async (req, res) => {
-  try {
-    const { colecao, id } = req.params;
-
-    if (!validarColecao(colecao)) {
-      return res.status(404).json({
-        erro: "Coleção não existe"
+      res.status(500).json({
+        erro: "Erro no upload"
       });
     }
-
-    await pool.query(
-      `DELETE FROM ${colecao} WHERE id = $1`,
-      [id]
-    );
-
-    res.json({
-      ok: true,
-      colecao,
-      id
-    });
-  } catch (erro) {
-    res.status(500).json({
-      erro: "Erro ao deletar item",
-      detalhe: erro.message
-    });
   }
-});
+);
 
-/* UPLOAD */
+tabelas.forEach((tabela) => {
+  app.get(`/api/${tabela}`, async (req, res) => {
+    try {
+      const resultado = await pool.query(
+        `SELECT dados FROM ${tabela}`
+      );
 
-app.post("/api/upload", upload.single("arquivo"), async (req, res) => {
-  try {
-    if (!req.file) {
-      return res.status(400).json({
-        erro: "Nenhum arquivo enviado"
+      res.json(resultado.rows.map((r) => r.dados));
+    } catch (erro) {
+      console.error(erro);
+
+      res.status(500).json({
+        erro: `Erro ao buscar ${tabela}`
       });
     }
+  });
 
-    const novo = {
-      id: Date.now().toString(),
-      pacienteId: req.body.pacienteId || "",
-      pacienteNome: req.body.pacienteNome || "",
-      tipo: req.body.tipo || "Arquivo",
-      descricao: req.body.descricao || "",
-      medico: req.body.medico || "",
-      nomeOriginal: req.file.originalname,
-      nomeArquivo: req.file.filename,
-      caminho: `/uploads/${req.file.filename}`,
-      mimetype: req.file.mimetype,
-      tamanho: req.file.size,
-      data: new Date().toLocaleString("pt-BR")
-    };
+  app.post(`/api/${tabela}`, async (req, res) => {
+    try {
+      const dados = req.body;
 
-    await pool.query(
-      `INSERT INTO arquivos (id, dados)
-       VALUES ($1, $2)`,
-      [novo.id, novo]
-    );
+      const id =
+        dados.id ||
+        dados.crm ||
+        Date.now().toString();
 
-    res.json(novo);
-  } catch (erro) {
-    res.status(500).json({
-      erro: "Erro ao enviar arquivo",
-      detalhe: erro.message
-    });
-  }
+      await pool.query(
+        `
+        INSERT INTO ${tabela} (id, dados)
+        VALUES ($1, $2)
+      `,
+        [id, dados]
+      );
+
+      res.json(dados);
+    } catch (erro) {
+      console.error(erro);
+
+      res.status(500).json({
+        erro: `Erro ao salvar ${tabela}`
+      });
+    }
+  });
+
+  app.put(`/api/${tabela}`, async (req, res) => {
+    try {
+      const lista = req.body;
+
+      await pool.query(`DELETE FROM ${tabela}`);
+
+      for (const item of lista) {
+        const id =
+          item.id ||
+          item.crm ||
+          Date.now().toString();
+
+        await pool.query(
+          `
+          INSERT INTO ${tabela} (id, dados)
+          VALUES ($1, $2)
+        `,
+          [id, item]
+        );
+      }
+
+      res.json({
+        ok: true
+      });
+    } catch (erro) {
+      console.error(erro);
+
+      res.status(500).json({
+        erro: `Erro ao atualizar ${tabela}`
+      });
+    }
+  });
+
+  app.delete(`/api/${tabela}/:id`, async (req, res) => {
+    try {
+      await pool.query(
+        `
+        DELETE FROM ${tabela}
+        WHERE id = $1
+      `,
+        [req.params.id]
+      );
+
+      res.json({
+        ok: true
+      });
+    } catch (erro) {
+      console.error(erro);
+
+      res.status(500).json({
+        erro: `Erro ao apagar ${tabela}`
+      });
+    }
+  });
 });
 
-/* DASHBOARD */
-
-app.get("/api/dashboard/resumo", async (req, res) => {
+app.get("/api/dashboard", async (req, res) => {
   try {
     const [
       pacientes,
       historico,
-      arquivos,
       medicos,
       vigilancias,
       pediatrias,
-      obstetricias
+      obstetricias,
+      psicologias
     ] = await Promise.all([
       pool.query("SELECT dados FROM pacientes"),
       pool.query("SELECT dados FROM historico"),
-      pool.query("SELECT dados FROM arquivos"),
       pool.query("SELECT dados FROM medicos"),
       pool.query("SELECT dados FROM vigilancias"),
       pool.query("SELECT dados FROM pediatrias"),
-      pool.query("SELECT dados FROM obstetricias")
+      pool.query("SELECT dados FROM obstetricias"),
+      pool.query("SELECT dados FROM psicologias")
     ]);
 
-    const mapDados = (resultado) =>
-      resultado.rows.map((r) => r.dados);
-
-    const contar = (lista, campo) => {
-      const obj = {};
-
-      lista.forEach((item) => {
-        const chave = item[campo] || "Não informado";
-        obj[chave] = (obj[chave] || 0) + 1;
-      });
-
-      return Object.entries(obj).map(([nome, total]) => ({
-        nome,
-        total
-      }));
-    };
-
-    const listaPacientes = mapDados(pacientes);
-    const listaHistorico = mapDados(historico);
-    const listaArquivos = mapDados(arquivos);
-
     res.json({
-      totalPacientes: listaPacientes.length,
-      totalExames: listaHistorico.length,
-      totalArquivos: listaArquivos.length,
+      totalPacientes: pacientes.rows.length,
+      totalExames: historico.rows.length,
       totalMedicos: medicos.rows.length,
       totalVigilancias: vigilancias.rows.length,
       totalPediatrias: pediatrias.rows.length,
       totalObstetricias: obstetricias.rows.length,
-      pacientesPorMotivo: contar(listaPacientes, "motivo"),
-      pacientesPorStatus: contar(listaPacientes, "status"),
-      examesPorTipo: contar(listaHistorico, "tipo"),
-      arquivosPorTipo: contar(listaArquivos, "tipo")
+      totalPsicologias: psicologias.rows.length
     });
   } catch (erro) {
+    console.error(erro);
+
     res.status(500).json({
-      erro: "Erro no dashboard",
-      detalhe: erro.message
+      erro: "Erro dashboard"
     });
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`Backend rodando em http://localhost:${PORT}`);
-});
+pool.connect()
+  .then(async () => {
+    console.log("Supabase conectado");
+
+    await criarTabelas();
+
+    app.listen(PORT, () => {
+      console.log(
+        `Backend rodando em http://localhost:${PORT}`
+      );
+    });
+  })
+  .catch((erro) => {
+    console.error(
+      "Erro ao conectar no Supabase:",
+      erro
+    );
+  });
